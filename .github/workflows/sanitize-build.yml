@@ -14,6 +14,10 @@ concurrency:
   group: sanitize-build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Opt JS actions into Node 24 (Node 20 is deprecated on GH runners).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -30,11 +34,23 @@ jobs:
           docker-images: false
           swap-storage: false
 
-      - name: Checkout (recursive — pulls the pdfium-src fork submodule)
+      - name: Checkout monorepo (submodule cloned standalone below)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
+
+      - name: Materialize pdfium-src as a standalone clone
+        # gclient runs `git config --local` inside pdfium-src; a submodule
+        # gitdir-link does not resolve inside the Docker container, so clone the
+        # fork as a real repo (own .git dir) at the exact pinned gitlink commit.
+        run: |
+          set -euo pipefail
+          SHA=$(git ls-tree HEAD packages/pdfium/pdfium-src | awk '{print $3}')
+          echo "pdfium-src pinned at $SHA"
+          rm -rf packages/pdfium/pdfium-src
+          git clone --filter=blob:none https://github.com/Phauks/pdfium.git packages/pdfium/pdfium-src
+          git -C packages/pdfium/pdfium-src checkout "$SHA"
+          test -d packages/pdfium/pdfium-src/.git && echo "standalone .git OK"
 
       - name: Build pdfium.wasm in Docker (gclient sync + ninja, cold ~45-60min)
         working-directory: packages/pdfium
