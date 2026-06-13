@@ -54,10 +54,20 @@ jobs:
 
       - name: Build pdfium.wasm in Docker (gclient sync + ninja, cold ~45-60min)
         working-directory: packages/pdfium
+        # The container runs as root but the bind-mounted repo is owned by the
+        # runner uid, so git's dubious-ownership guard makes gclient's
+        # `git config --local` fail ("not a git repository"). Inject safe.directory
+        # via env (GIT_CONFIG_*) so every in-container git call trusts the tree —
+        # without modifying upstream build.sh. Both the wildcard (git >= 2.35.3)
+        # and the explicit path (older git) are set for portability.
         run: |
           set -euo pipefail
           docker compose build pdfium-build
-          docker compose run --rm pdfium-build
+          docker compose run --rm \
+            -e GIT_CONFIG_COUNT=2 \
+            -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            -e GIT_CONFIG_KEY_1=safe.directory -e GIT_CONFIG_VALUE_1=/workspace/packages/pdfium/pdfium-src \
+            pdfium-build
 
       - name: Show freshly vendored artifacts
         run: |
