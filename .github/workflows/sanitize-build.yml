@@ -1,14 +1,20 @@
 name: Sanitize Build & Test
 
-# Builds pdfium.wasm from the (forked) pdfium-src submodule in Docker on a Linux
-# runner, then builds the TS packages and runs the document-sanitization tests
-# against a crafted dirty fixture. This moves the heavy PDFium WASM build off the
-# contributor's machine. Triggered on push to the feature branch or manually.
+# Default (push): build the TS packages and run the document-sanitization tests
+# against the COMMITTED pdfium.wasm (~2-3 min). The slow Docker WASM rebuild runs
+# ONLY on manual dispatch with rebuild_wasm=true — used when the EPDF_* C++ changes
+# (then download the 'pdfium-vendor' artifact and commit it). This keeps routine
+# CI fast and the heavy build off the contributor's machine.
 
 on:
   push:
-    branches: [feat/document-sanitization]
-  workflow_dispatch: {}
+    branches: [feat/document-sanitization, feat/ocg-removal]
+  workflow_dispatch:
+    inputs:
+      rebuild_wasm:
+        description: 'Rebuild pdfium.wasm from source in Docker (~50 min). Off = use committed wasm.'
+        type: boolean
+        default: false
 
 concurrency:
   group: sanitize-build-${{ github.ref }}
@@ -24,6 +30,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Free disk space (PDFium build needs ~25GB)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_wasm }}
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -40,6 +47,7 @@ jobs:
           fetch-depth: 1
 
       - name: Materialize pdfium-src as a standalone clone
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_wasm }}
         # gclient runs `git config --local` inside pdfium-src; a submodule
         # gitdir-link does not resolve inside the Docker container, so clone the
         # fork as a real repo (own .git dir) at the exact pinned gitlink commit.
@@ -53,6 +61,7 @@ jobs:
           test -d packages/pdfium/pdfium-src/.git && echo "standalone .git OK"
 
       - name: Build pdfium.wasm in Docker (gclient sync + ninja, cold ~45-60min)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_wasm }}
         working-directory: packages/pdfium
         # The container runs as root but the bind-mounted repo is owned by the
         # runner uid, so git's dubious-ownership guard makes gclient's
@@ -95,6 +104,7 @@ jobs:
             '
 
       - name: Show freshly vendored artifacts
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_wasm }}
         run: |
           ls -la packages/pdfium/src/vendor/
           echo '--- changed files vs committed baseline ---'
@@ -139,7 +149,7 @@ jobs:
           echo "ran $ran sanitize test file(s)"
 
       - name: Upload built wasm + bindings
-        if: always()
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_wasm }}
         uses: actions/upload-artifact@v4
         with:
           name: pdfium-vendor
