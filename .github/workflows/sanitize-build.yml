@@ -133,6 +133,7 @@ jobs:
         run: |
           node build-dirty-fixture.mjs
           node verify-dirty-fixture.mjs
+          node build-ocg-fixture.mjs
           node baseline-check.mjs
 
       - name: Run sanitize vector tests (auto-discovers test-*.mjs)
