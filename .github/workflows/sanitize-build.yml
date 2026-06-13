@@ -1,7 +1,7 @@
 name: Sanitize Build & Test
 
 # Default (push): build the TS packages and run the document-sanitization tests
-# against the COMMITTED pdfium.wasm (~2-3 min). The slow Docker WASM rebuild runs
+# against the COMMITTED pdfium.wasm (~1.5 min, measured). The Docker WASM rebuild runs
 # ONLY on manual dispatch with rebuild_wasm=true — used when the EPDF_* C++ changes
 # (then download the 'pdfium-vendor' artifact and commit it). This keeps routine
 # CI fast and the heavy build off the contributor's machine.
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       rebuild_wasm:
-        description: 'Rebuild pdfium.wasm from source in Docker (~50 min). Off = use committed wasm.'
+        description: 'Rebuild pdfium.wasm from source in Docker (~20 min total, measured). Off = use committed wasm.'
         type: boolean
         default: false
 
@@ -60,7 +60,7 @@ jobs:
           git -C packages/pdfium/pdfium-src checkout "$SHA"
           test -d packages/pdfium/pdfium-src/.git && echo "standalone .git OK"
 
-      - name: Build pdfium.wasm in Docker (gclient sync + ninja, cold ~45-60min)
+      - name: Build pdfium.wasm in Docker (gclient sync + ninja, ~18 min measured)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_wasm }}
         working-directory: packages/pdfium
         # The container runs as root but the bind-mounted repo is owned by the
