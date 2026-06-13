@@ -63,11 +63,31 @@ jobs:
         run: |
           set -euo pipefail
           docker compose build pdfium-build
+          # The image's git (2.34) is too old for current depot_tools, whose
+          # python-bin shim never gets its real-python pointer set up -> gn's
+          # python wrapper self-recurses to an OOM. Upgrade git in-container,
+          # trigger depot_tools' python bootstrap with the new git, then run the
+          # author's build.sh unchanged. safe.directory handles the root-vs-runner
+          # ownership of the bind-mounted tree. Entrypoint overridden to do this.
           docker compose run --rm \
             -e GIT_CONFIG_COUNT=2 \
             -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
             -e GIT_CONFIG_KEY_1=safe.directory -e GIT_CONFIG_VALUE_1=/workspace/packages/pdfium/pdfium-src \
-            pdfium-build
+            --entrypoint bash \
+            pdfium-build -lc '
+              set -eux
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends software-properties-common
+              add-apt-repository -y ppa:git-core/ppa
+              apt-get update
+              apt-get install -y git
+              git --version
+              export PATH="$PATH:/opt/depot-tools"
+              # Force depot_tools to (re)bootstrap its cipd python with the new git.
+              gclient --version || true
+              bash /workspace/packages/pdfium/scripts/build.sh
+            '
 
       - name: Show freshly vendored artifacts
         run: |
